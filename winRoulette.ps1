@@ -47,6 +47,28 @@ function Get-PathAccessChk {
 
 }
 
+function Check-LocalSystemServicePriv {
+<#
+.OUTPUTS
+Return if the service is run with LocalSystem
+#>
+    [CmdletBinding()]
+    [OutputType([bool])]
+	param(
+        [Parameter(Position = 0, Mandatory = $True)]
+        [String]
+        [ValidateNotNullOrEmpty()]
+        $serv
+    )
+
+    #Check admin priviledges
+    if (sc.exe qc "$serv" | Select-String -Pattern "localsystem"){
+        return $True
+    }else{
+        return $False
+    }
+}
+
 
 ################################
 # Privilege Tecniques Functions
@@ -68,7 +90,7 @@ function Check-InsecureServices {
     # execute acceschk
     $commandAccess = "$accesschk /accepteula -uwcqv $cusername *"
     $raccchk = Invoke-Expression -Command $commandAccess
-    $raccchk | Out-File -FilePath "$scriptPath\results\accesscheckInsecureServices.txt"
+    $raccchk | Out-File -FilePath "$scriptPath\results\AchkInsecureServices.txt"
 
     #Check permission services
     $pattern = '(SERVICE_ALL_ACCESS|SERVICE_CHANGE_CONFIG)'
@@ -139,7 +161,7 @@ function Check-UnquotedPathServices {
                     foreach($ipath in $newconcatpatharray){
                         $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
                         $raccchk = Invoke-Expression -Command $commandAccess
-                        $raccchk | Out-File -FilePath "$scriptPath\results\accesscheckUnquotedPath.txt" -Append
+                        $raccchk | Out-File -FilePath "$scriptPath\results\AchkUnquotedPath.txt" -Append
                     }
                 }
             }
@@ -167,6 +189,59 @@ function Check-UnquotedPathServices {
 
 }
 
+
+function Check-WeakRegistryPermissions{
+    [CmdletBinding()]
+	param()
+
+    write-host "`n"
+    write-host "[*] Check weak registry permissions"
+
+    #Return variable
+    $result = $false
+
+    # Check write permissions for each service in registry
+    # For user or group
+    $accesschk = Get-PathAccessChk
+    $commandAccess="$accesschk /accepteula $env:UserName -uvwqks HKLM\System\CurrentControlSet\Services"
+    $raccchk = Invoke-Expression -Command $commandAccess
+
+    #Services has KEY_ALL_ACCESS
+    $posvulnServices = $raccchk | Select-String -Pattern 'KEY_ALL_ACCESS' -AllMatches -Context 1 | % { ($_.context.precontext)[0] }
+
+
+    # Get the name of service of the $vulnServices \Services\name
+    $vulServ = @()
+    if (-not ([string]::IsNullOrEmpty($posvulnServices))){
+        
+        foreach ($line in $posvulnServices.Split("`n")) {
+            $arrayVuln = $line.Split("\")
+            #Last element is the service
+            $serv = $arrayVuln[$arrayVuln.Length - 1]
+            #Check if the service has LocalSystem account association
+            if (Check-LocalSystemServicePriv $serv) {
+                $result = $true
+                $vulServ += $serv
+            }
+        }
+    }
+
+    # Write method
+    if ($result -eq $true){
+        $vulServ = $vulServ -join "`n"
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Vulnerable services based on weak privileges in registry with LocalSystem:"
+        write-host "$vulServ"
+        write-host "   1. Overwrite the service registration key: reg add HKLM\SYSTEM\CurrentControlSet\Services\[vulnserv] /v ImagePath /t REG_EXPAND_SZ /d [payloadpath] /f"
+        write-host "   2. net start [vulnserv]"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+
+}
+
+
+
 #############################
 # Main Function
 #############################
@@ -175,6 +250,7 @@ function main {
     # Start functions
     Check-InsecureServices
     Check-UnquotedPathServices
+    Check-WeakRegistryPermissions
 
 }
 
