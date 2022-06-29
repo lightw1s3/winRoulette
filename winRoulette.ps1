@@ -284,50 +284,52 @@ function Check-InsecureServicesExecutable{
     $vulnserv=@()
         
     #Get path not into System32
-    #Delete from path the double quotes
-    $possiblevulservices = Get-WmiObject win32_service | Select PathName | Where-object {
+    $possiblevulservices = Get-WmiObject win32_service | Select Name, PathName | Where-object {
         ($_.pathname -ne $null) -and ($_.pathname.ToLower() -notmatch "\\system32\\")
-    } | %{$_.pathname -replace '"',''}
+    }
 
-    
-    # Check FILE_ALL_ACCESS or FILE_WRITE_* (if only has the modify permissions)
-    # \accesschk64.exe -quvw "C:\Program Files\Vk9 Security\binary files\executable files\calc.exe"
-    # y luego despues de los permisos chequear si en esa salida se encuentra el usuario o alguno de los grupos apuntados
-    
-    foreach($ipath in $possiblevulservices){
-        #Delete parameters and simple quotes
-        $ipath = $ipath.Replace("'", "")
-        $ipath = $ipath.Substring(0, $ipath.ToLower().IndexOf('.exe') + 4)
-        
-        #Execute Acceschk
-        $accesschk = Get-PathAccessChk
-        $commandAccess = "$accesschk /accepteula -quvw `"$ipath`""
-        $raccchk = Invoke-Expression -Command $commandAccess
+    if (-not ([string]::IsNullOrEmpty($possiblevulservices))){
 
-        $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
-        if ("$raccchk" -match $patternPermissions){
+        foreach($ipath in $possiblevulservices){
+            #check if the service run with localsystem
+            if (Check-LocalSystemServicePriv $ipath.Name){
+
+                $ipath.pathname = $ipath.pathname.Replace("'", "")
+                $ipath.pathname = $ipath.pathname.Replace('"', '')
+                $ipath.pathname = $ipath.pathname.Substring(0, $ipath.pathname.ToLower().IndexOf('.exe') + 4)
+
+                #Execute Acceschk
+                $accesschk = Get-PathAccessChk
+                $pathexecutable=$ipath.pathname
+                $commandAccess = "$accesschk /accepteula -quvw `"$pathexecutable`""
+                $raccchk = Invoke-Expression -Command $commandAccess
+
+                $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
+                if ("$raccchk" -match $patternPermissions){
             
-            #check groups in service
-            #Check user in service
-            $userLocalGroups = Get-LocalGroupUser
-            $check=$False
-            foreach($group in $userLocalGroups){
-                $group = $group.Replace("\", "\\")
-                if ("$raccchk" -match "$group"){
-                     $check=$True
-                     break  
-                }
-            }
+                    #check groups in service
+                    #Check user in service
+                    $userLocalGroups = Get-LocalGroupUser
+                    $check=$False
+                    foreach($group in $userLocalGroups){
+                        $group = $group.Replace("\", "\\")
+                        if ("$raccchk" -match "$group"){
+                             $check=$True
+                             break  
+                        }
+                    }
            
-            #Check user in service
-            if ($check -eq $False){
-                if ("$raccchk" -match "$env:Username"){
-                    $vulnserv += $ipath
-                }
-            } else {
-                $vulnserv += $ipath
-            }
+                    #Check user in service
+                    if ($check -eq $False){
+                        if ("$raccchk" -match "$env:Username"){
+                            $vulnserv += $ipath.pathname
+                        }
+                    } else {
+                        $vulnserv += $ipath.pathname
+                    }
             
+                }
+            }
         }
     }
     
@@ -356,9 +358,9 @@ function Check-InsecureServicesExecutable{
 
 function main {
     # Start functions
-    Check-InsecureServices
-    Check-UnquotedPathServices
-    Check-WeakRegistryPermissions
+    #Check-InsecureServices
+    #Check-UnquotedPathServices
+    #Check-WeakRegistryPermissions
     Check-InsecureServicesExecutable
 
 }
