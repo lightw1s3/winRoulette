@@ -101,6 +101,45 @@ Return if the service is run with LocalSystem
 # Privilege Tecniques Functions
 ################################
 
+function Check-KernelInfo {
+    [CmdletBinding()]
+	param()
+
+    write-host "`n"
+    write-host "[*] Check kernel information"
+    
+    echo "SO Version" | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    $osversion = [System.Environment]::OSVersion.Version 
+    $osversion | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    echo -------------------- | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+
+    echo "Architecture" | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    $architecture = wmic os get osarchitecture
+    $architecture | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    echo -------------------- | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+
+    echo "All Patches" | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    $patches = Get-WmiObject -query 'select * from win32_quickfixengineering' | foreach {$_.hotfixid}
+    $patches | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    echo -------------------- | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+
+    echo "Security Patches" | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    $secupdates = Get-Hotfix -description "Security update"
+    $patches | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+    echo -------------------- | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
+
+    write-host "  ? Last change for escalation of privileges" -ForegroundColor DarkYellow
+    write-host "  OsVersion:"
+    write-host $osversion
+    write-host "   Architecture:"
+    write-host $architecture
+    write-host "  Patches:"
+    write-host $patches
+    write-host "   Next Steps:"
+    write-host "   1. Search operative system version in ExploitDB or Google it"
+    write-host "   2. Same with the KB"
+}
+
 function Check-InsecureServices {
 
     [CmdletBinding()]
@@ -361,7 +400,8 @@ function main {
     #Check-InsecureServices
     #Check-UnquotedPathServices
     #Check-WeakRegistryPermissions
-    Check-InsecureServicesExecutable
+    #Check-InsecureServicesExecutable
+    Check-KernelInfo
 
 }
 
