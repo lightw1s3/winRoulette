@@ -1,6 +1,6 @@
 <#
 File: winRoulette.ps1
-Author: Sara Concepción (@lightw1s3)
+Author: Sara Concepcion (@lightw1s3)
 Required Dependencies: None
 #>
 
@@ -14,6 +14,7 @@ Global variables
 $cusername = $env:UserName
 $arch = $env:PROCESSOR_ARCHITECTURE
 $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
+
 #Results Folder
 New-Item -Path "$scriptPath\results" -ItemType Directory -Force | Out-Null
 
@@ -21,7 +22,33 @@ New-Item -Path "$scriptPath\results" -ItemType Directory -Force | Out-Null
 # Auxiliary Functions
 ################################
 
+function Get-LocalGroupUser {
+<#
+.OUTPUTS
+Return all the groups common in Windows that maybe a user can be assigned
+It depends on the language of the operative system
+#>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+	param()
+    
+    $groups=@("Everyone", "NT AUTHORITY\Authenticated users", "BUILTIN\Users", "NT AUTHORITY\Interactive")
+
+    $language = Get-WinSystemLocale | Select Name
+
+    if($language -match "es-*"){
+        $groups += "NT AUTHORITY\Usuarios autentificados", "Todos", "BUILTIN\Usuarios"
+    }
+    
+    return $groups
+    
+}
+
 function Get-PathAccessChk {
+<#
+.OUTPUTS
+Return the path of the accesschk tool
+#>
     [CmdletBinding()]
 	param()
 
@@ -90,7 +117,7 @@ function Check-InsecureServices {
     # execute acceschk
     $commandAccess = "$accesschk /accepteula -uwcqv $cusername *"
     $raccchk = Invoke-Expression -Command $commandAccess
-    $raccchk | Out-File -FilePath "$scriptPath\results\AchkInsecureServices.txt"
+    $raccchk | Out-File -FilePath "$scriptPath\results\accesscheckInsecureServices.txt"
 
     #Check permission services
     $pattern = '(SERVICE_ALL_ACCESS|SERVICE_CHANGE_CONFIG)'
@@ -161,7 +188,7 @@ function Check-UnquotedPathServices {
                     foreach($ipath in $newconcatpatharray){
                         $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
                         $raccchk = Invoke-Expression -Command $commandAccess
-                        $raccchk | Out-File -FilePath "$scriptPath\results\AchkUnquotedPath.txt" -Append
+                        $raccchk | Out-File -FilePath "$scriptPath\results\accesscheckUnquotedPath.txt" -Append
                     }
                 }
             }
@@ -203,14 +230,19 @@ function Check-WeakRegistryPermissions{
     # Check write permissions for each service in registry
     # For user or group
     $accesschk = Get-PathAccessChk
+
     $commandAccess="$accesschk /accepteula $env:UserName -uvwqks HKLM\System\CurrentControlSet\Services"
     $raccchk = Invoke-Expression -Command $commandAccess
+    #$raccchk | Out-File -FilePath "$scriptPath\results\AchkWeakRegistryPermissions.txt"
 
-    #Services has KEY_ALL_ACCESS
+    #Servicios que posee el permiso KEY_ALL_ACCESS
+    #$vulnServices = Select-String -Path "$scriptPath\results\AchkWeakRegistryPermissions.txt" -Pattern 'KEY_ALL_ACCESS' -AllMatches -Context 1 | % { ($_.context.precontext)[0] }
     $posvulnServices = $raccchk | Select-String -Pattern 'KEY_ALL_ACCESS' -AllMatches -Context 1 | % { ($_.context.precontext)[0] }
 
+    #Check if the user can start and stop the service
+    # accc -ucqv $env:UserName service
+    # Get the name of service of the $vulnServices \Services\name trim por barras
 
-    # Get the name of service of the $vulnServices \Services\name
     $vulServ = @()
     if (-not ([string]::IsNullOrEmpty($posvulnServices))){
         
@@ -218,7 +250,6 @@ function Check-WeakRegistryPermissions{
             $arrayVuln = $line.Split("\")
             #Last element is the service
             $serv = $arrayVuln[$arrayVuln.Length - 1]
-            #Check if the service has LocalSystem account association
             if (Check-LocalSystemServicePriv $serv) {
                 $result = $true
                 $vulServ += $serv
@@ -240,6 +271,83 @@ function Check-WeakRegistryPermissions{
 
 }
 
+function Check-InsecureServicesExecutable{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check insecure services executable"
+
+    #Return variable
+    $result = $false
+    #Auxiliar variables
+    $vulnserv=@()
+        
+    #Get path not into System32
+    #Delete from path the double quotes
+    $possiblevulservices = Get-WmiObject win32_service | Select PathName | Where-object {
+        ($_.pathname -ne $null) -and ($_.pathname.ToLower() -notmatch "\\system32\\")
+    } | %{$_.pathname -replace '"',''}
+
+    
+    # Check FILE_ALL_ACCESS or FILE_WRITE_* (if only has the modify permissions)
+    # \accesschk64.exe -quvw "C:\Program Files\Vk9 Security\binary files\executable files\calc.exe"
+    # y luego despues de los permisos chequear si en esa salida se encuentra el usuario o alguno de los grupos apuntados
+    
+    foreach($ipath in $possiblevulservices){
+        #Delete parameters and simple quotes
+        $ipath = $ipath.Replace("'", "")
+        $ipath = $ipath.Substring(0, $ipath.ToLower().IndexOf('.exe') + 4)
+        
+        #Execute Acceschk
+        $accesschk = Get-PathAccessChk
+        $commandAccess = "$accesschk /accepteula -quvw `"$ipath`""
+        $raccchk = Invoke-Expression -Command $commandAccess
+
+        $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
+        if ("$raccchk" -match $patternPermissions){
+            
+            #check groups in service
+            #Check user in service
+            $userLocalGroups = Get-LocalGroupUser
+            $check=$False
+            foreach($group in $userLocalGroups){
+                $group = $group.Replace("\", "\\")
+                if ("$raccchk" -match "$group"){
+                     $check=$True
+                     break  
+                }
+            }
+           
+            #Check user in service
+            if ($check -eq $False){
+                if ("$raccchk" -match "$env:Username"){
+                    $vulnserv += $ipath
+                }
+            } else {
+                $vulnserv += $ipath
+            }
+            
+        }
+    }
+    
+    if (-not ([string]::IsNullOrEmpty($vulnserv))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Insecure executable services.The function checks that the permissions held by the user or groups to which it belongs through AccesChk are appropriate to exploit this vulnerability."
+        write-host "$vulnserv"
+        write-host "   1. Copy the payload in the path with the exactly name of the vuln service: copy [payload] [pathvulnserv] /Y"
+        write-host "   2. net start [vulnserv]"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+
+
+}
 
 
 #############################
@@ -251,6 +359,7 @@ function main {
     Check-InsecureServices
     Check-UnquotedPathServices
     Check-WeakRegistryPermissions
+    Check-InsecureServicesExecutable
 
 }
 
