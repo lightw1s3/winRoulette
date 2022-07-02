@@ -96,18 +96,129 @@ Return if the service is run with LocalSystem
     }
 }
 
+function Check-IncorrectFilePermissions {
+<#
+.INPUTS
+Complete path for an executable
+
+.OUTPUTS
+Return if the executable is modifible for user
+#>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Position = 0, Mandatory = $True)]
+        [String]
+        [ValidateNotNullOrEmpty()]
+        $pathfile
+    )
+
+    #result variable
+    $check = $False
+
+    #Execute Acceschk
+    $accesschk = Get-PathAccessChk
+    $commandAccess = "$accesschk /accepteula -quvw `"$pathfile`""
+    $raccchk = Invoke-Expression -Command $commandAccess
+
+    $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
+    if ("$raccchk" -match $patternPermissions){
+            
+        #check groups in service
+        #Check user in service
+        $userLocalGroups = Get-LocalGroupUser
+
+        foreach($group in $userLocalGroups){
+            $group = $group.Replace("\", "\\")
+            if ("$raccchk" -match "$group"){
+                    $check=$True
+                    break  
+            }
+        }
+           
+        #Check user in service
+        if ($check -eq $False){
+            if ("$raccchk" -match "$env:Username"){
+                $check=$True
+            }
+        }      
+    }
+
+    if ($check -eq $False){
+        return $False
+    } else {
+        return $True
+    }
+}
+
+function Check-DirectoryPermissions {
+<#
+.INPUTS
+Complete path for an executable
+
+.OUTPUTS
+Return if the directory is modified by user
+#>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Position = 0, Mandatory = $True)]
+        [String]
+        [ValidateNotNullOrEmpty()]
+        $ipath
+    )
+
+    #result variable
+    $check = $False
+
+    #Execute Acceschk
+    $accesschk = Get-PathAccessChk
+    $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
+    $raccchk = Invoke-Expression -Command $commandAccess
+
+    $patternPermissions = "(SERVICE_ALL_ACCESS|SERVICE_CHANGE_CONFIG)"
+    if ("$raccchk" -match $patternPermissions){
+            
+        #check groups in service
+        #Check user in service
+        $userLocalGroups = Get-LocalGroupUser
+
+        foreach($group in $userLocalGroups){
+            $group = $group.Replace("\", "\\")
+            if ("$raccchk" -match "$group"){
+                    $check=$True
+                    break  
+            }
+        }
+           
+        #Check user in service
+        if ($check -eq $False){
+            if ("$raccchk" -match "$env:Username"){
+                $check=$True
+            }
+        }      
+    }
+
+    if ($check -eq $False){
+        return $False
+    } else {
+        return $True
+    }
+}
+
 
 ################################
 # Privilege Tecniques Functions
 ################################
 
 function Check-KernelInfo {
+
     [CmdletBinding()]
 	param()
-
+    
     write-host "`n"
     write-host "[*] Check kernel information"
-    
+
     echo "SO Version" | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
     $osversion = [System.Environment]::OSVersion.Version 
     $osversion | Out-File -FilePath "$scriptPath\results\SystemInfo.txt" -Append
@@ -222,8 +333,6 @@ function Check-UnquotedPathServices {
                     
                     # Check write permissions in paths
                     $accesschk = Get-PathAccessChk
-
-                    # execute acceschk
                     foreach($ipath in $newconcatpatharray){
                         $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
                         $raccchk = Invoke-Expression -Command $commandAccess
@@ -245,7 +354,7 @@ function Check-UnquotedPathServices {
                 write-host "  Possible vulnerable name services:" 
                 write-host $servresult
                 write-host "  Next Steps:"
-                write-host "   1. Search SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions: sc qc [service_name] "
+                write-host "   1. Search SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions: sc.exe qc [service_name] "
                 write-host "   2. Check if it is launched with LocalSystem and Start_Type: 3"
                 write-host "   3. Check write permissions in the split path folders services. Search RW in file accesscheckUnquotedPath.txt"
                 write-host "   4. Place the payload in the indicated path. Rename it with the letters up to the next found space."
@@ -312,7 +421,9 @@ function Check-WeakRegistryPermissions{
 
 function Check-InsecureServicesExecutable{
     [CmdletBinding()]
-	param()
+	param(
+        
+    )
     
     write-host "`n"
     write-host "[*] Check insecure services executable"
@@ -337,37 +448,15 @@ function Check-InsecureServicesExecutable{
                 $ipath.pathname = $ipath.pathname.Replace('"', '')
                 $ipath.pathname = $ipath.pathname.Substring(0, $ipath.pathname.ToLower().IndexOf('.exe') + 4)
 
-                #Execute Acceschk
-                $accesschk = Get-PathAccessChk
-                $pathexecutable=$ipath.pathname
-                $commandAccess = "$accesschk /accepteula -quvw `"$pathexecutable`""
-                $raccchk = Invoke-Expression -Command $commandAccess
 
-                $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
-                if ("$raccchk" -match $patternPermissions){
-            
-                    #check groups in service
-                    #Check user in service
-                    $userLocalGroups = Get-LocalGroupUser
-                    $check=$False
-                    foreach($group in $userLocalGroups){
-                        $group = $group.Replace("\", "\\")
-                        if ("$raccchk" -match "$group"){
-                             $check=$True
-                             break  
-                        }
-                    }
-           
-                    #Check user in service
-                    if ($check -eq $False){
-                        if ("$raccchk" -match "$env:Username"){
-                            $vulnserv += $ipath.pathname
-                        }
-                    } else {
-                        $vulnserv += $ipath.pathname
-                    }
-            
+                #Check permissions service
+                $pathexecutable=$ipath.pathname
+                $incorrectPerm = Check-IncorrectFilePermissions $pathexecutable
+
+                if ($incorrectPerm -eq $True){
+                    $vulnserv += $ipath.pathname
                 }
+
             }
         }
     }
@@ -439,43 +528,18 @@ function Check-TaskScheduled{
                 $pathTaskCommand = $pathTaskCommand.Replace('"', '')
                 $pathTaskCommand = $pathTaskCommand.Substring(0, $pathTaskCommand.ToLower().IndexOf('.exe') + 4)
 
-                #Execute Acceschk
-                $pathexecutable=$pathTaskCommand
-                $commandAccess = "$accesschk /accepteula -quvw `"$pathexecutable`""
-                $raccchk = Invoke-Expression -Command $commandAccess
+                #Check permissions service
+                $incorrectPerm = Check-IncorrectFilePermissions $pathTaskCommand
 
-                $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
-                if ("$raccchk" -match $patternPermissions){
-            
-                    #check groups in service
-                    #Check user in service
-                    $userLocalGroups = Get-LocalGroupUser
-                    $check=$False
-                    foreach($group in $userLocalGroups){
-                        $group = $group.Replace("\", "\\")
-                        if ("$raccchk" -match "$group"){
-                                $check=$True
-                                break  
-                        }
-                    }
-           
-                    #Check user in service
-                    if ($check -eq $False){
-                        if ("$raccchk" -match "$env:Username"){
-                            $vulnservPerm.add("$taskname","$pathTaskCommand")
-                        }
-                    } else {
-                        $vulnservPerm.add("$taskname","$pathTaskCommand")
-                    }
+                if ($incorrectPerm -eq $True){
+                    $vulnservPerm.add("$taskname","$pathTaskCommand")
                 }
+
                 #######
                 #2. check unquoted path
                 #######
                 $splitpathblank = $command.Substring(0, $command.ToLower().IndexOf('.exe') + 4).Split(' ')
                 $splitpathslash = $command.Substring(0, $command.ToLower().IndexOf('.exe') + 4).Split('\')
-
-                # Check write permissions
-                # C:\PrivEsc\accesschk.exe /accepteula -uwdq $env:UserName "C:\Program Files\Unquoted Path Service\"
 
                 $concatpatharray = @()
 
@@ -491,33 +555,13 @@ function Check-TaskScheduled{
                     # Check write permissions in path
                     # execute acceschk
                     foreach($ipath in $newconcatpatharray){
-                        $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
-                        $raccchk = Invoke-Expression -Command $commandAccess
-                        $patternPermissions = "(SERVICE_ALL_ACCESS|SERVICE_CHANGE_CONFIG)"
-                        if ("$raccchk" -match $patternPermissions){
-                            #check groups in service
-                            #Check user in service
-                            $userLocalGroups = Get-LocalGroupUser
-                            $check=$False
-                            foreach($group in $userLocalGroups){
-                                $group = $group.Replace("\", "\\")
-                                if ("$raccchk" -match "$group"){
-                                        $check=$True
-                                        break  
-                                }
-                            }
-           
-                            #Check user in service
-                            if ($check -eq $False){
-                                if ("$raccchk" -match "$env:Username"){
-                                    $vulnservUnquoted.add("$taskname","$ipath")
-                                    $raccchk | Out-File -FilePath "$scriptPath\results\AccChk_TaskUnquotedPath.txt" -Append
-                                }
-                            } else {
-                                $vulnservUnquoted.add("$taskname","$ipath")
-                            }
+
+                        $okwritedir = Check-DirectoryPermissions $ipath
+
+                        if ($okwritedir -eq $True){
+                            $vulnservUnquoted.add("$taskname","$ipath")
+                            $raccchk | Out-File -FilePath "$scriptPath\results\AccChk_TaskUnquotedPath.txt" -Append
                         }
-                         
                     }
                 }
 
@@ -571,6 +615,75 @@ function Check-TaskScheduled{
 
 }
 
+function Check-Autoruns{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check insecure services executable points to an autorun registry"
+
+    #Return variable
+    $result = $false
+
+    #Auxiliary variables
+    $servVuln = @()
+    $OrigError = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+
+    # Only search in HKLM
+    $keyAutoruns = @("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnce",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\Run",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\Runonce",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\RunService",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnceService",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\RunService",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnceService"
+                    )
+    
+    #Obtain executables for each value
+    foreach($ikey in $keyAutoruns){
+        $registryCommand= "Registry::" + $ikey
+        #To manage the registry that not exits
+        try {
+            $namesubkeys = Get-Item -Path $registryCommand
+        }catch{
+            break
+        }
+
+        foreach($v in $namesubkeys.GetValueNames()){
+            $service = $namesubkeys.GetValue($v)
+
+            #Check permissions service
+            $incorrectPerm = Check-IncorrectFilePermissions $service
+
+            if($incorrectPerm){
+                $servVuln += $service
+            }
+        }
+    }
+    
+    $ErrorActionPreference = $OrigError
+    if (-not ([string]::IsNullOrEmpty($servVuln))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Insecure executable services.The function checks that the permissions held by the user or groups to which it belongs through AccesChk are appropriate to exploit this vulnerability."
+        write-host "$servVuln"
+        write-host "   1. Copy the payload in the path with the exactly name of the vuln service: copy [payload] [pathvulnserv] /Y"
+        write-host "   2. Restart or turn off the system. Wait for an administrator user to log in."
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+    
+}
+
+
 #############################
 # Main Function
 #############################
@@ -582,7 +695,8 @@ function main {
     #Check-UnquotedPathServices
     #Check-WeakRegistryPermissions
     #Check-InsecureServicesExecutable
-    Check-TaskScheduled
+    #Check-TaskScheduled
+    #Check-Autoruns
 
 }
 
