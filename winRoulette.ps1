@@ -390,6 +390,119 @@ function Check-InsecureServicesExecutable{
 
 }
 
+function Check-TaskScheduled{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check insecure task scheduled"
+
+    #Return variable
+    $resultPerm = $false
+    #Auxiliary variables
+    $vulnservPerm=@{}
+
+    $OrigError = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+
+    # Get all task possible vuln
+    $tasks = Get-ScheduledTask | Where-Object {$_.TaskPath -notlike "\Microsoft*"}
+
+    if ($tasks.Count -ne 0){
+        foreach ($task in $tasks){
+            #Check if the task is enabled
+            [string] $taskstate = $task.state
+            if($taskstate.ToLower() -eq "ready"){
+                $taskname = $task.taskname
+
+                #Obtain command Line
+                #sometimes prints task that not exists
+                try{
+                $command = schtasks /query /tn "$taskname" /xml | Select-String "Command"
+                } catch {
+                    break
+                }
+                $command = $command.ToString().Trim()
+                $match = Select-String ">(.*)<" -inputobject $command
+                $command = $match.matches.groups[0].value
+                $command = $command.Replace(">", "")
+                $pathTaskCommand = $command.Replace("<", "")
+
+                #######
+                #1. check insecure permissions
+                #######
+                #Check permissions of the executable
+                $pathTaskCommand = $pathTaskCommand.Replace("'", "")
+                $pathTaskCommand = $pathTaskCommand.Replace('"', '')
+                $pathTaskCommand = $pathTaskCommand.Substring(0, $pathTaskCommand.ToLower().IndexOf('.exe') + 4)
+
+                #Execute Acceschk
+                $accesschk = Get-PathAccessChk
+                $pathexecutable=$pathTaskCommand
+                $commandAccess = "$accesschk /accepteula -quvw `"$pathexecutable`""
+                $raccchk = Invoke-Expression -Command $commandAccess
+
+                $patternPermissions = "(FILE_ALL_ACCESS|FILE_WRITE_)"
+                if ("$raccchk" -match $patternPermissions){
+            
+                    #check groups in service
+                    #Check user in service
+                    $userLocalGroups = Get-LocalGroupUser
+                    $check=$False
+                    foreach($group in $userLocalGroups){
+                        $group = $group.Replace("\", "\\")
+                        if ("$raccchk" -match "$group"){
+                                $check=$True
+                                break  
+                        }
+                    }
+           
+                    #Check user in service
+                    if ($check -eq $False){
+                        if ("$raccchk" -match "$env:Username"){
+                            $vulnservPerm.add("$taskname","$pathTaskCommand")
+                        }
+                    } else {
+                        $vulnservPerm.add("$taskname","$pathTaskCommand")
+                    }
+                }
+                #######
+                #2. check unquoted path
+                #######
+                                
+            } else {
+                Write-Verbose "Task '$($task.name)' is disabled"
+            }
+            
+        }#foreachtasks
+    }#exitstasks cambio
+
+    $ErrorActionPreference = $OrigError
+    
+    if ($vulnservPerm.Count -ne 0){
+      $resultPerm = $true  
+    }
+
+    # Write method
+    if ($resultPerm -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "  [-] insecure permissions executables in task"
+        $vulnservPerm.keys | foreach-object{
+            $message = 'Taskname-TaskCommand: {0} - {1}' -f $_, $vulnservPerm[$_]
+            Write-Output $message
+        }
+        write-host "   1. Obtain the service with the path (careful with env variables): Get-WmiObject win32_service | Select Name, PathName | Where-Object {`$_.pathname -eq `"[TaskCommand]`"} "
+        write-host "   2. Check if the service execute with LocalSystem Privs: sc.exe qc [servicename]"
+        write-host "   3. Copy the payload in the path with the exactly name of the vuln service: copy [payload] [pathvulnserv] /Y"
+        write-host "   4. Wait task"
+
+    } elseif ($resultPath -eq $true)  {
+
+    }else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+
+}
 
 #############################
 # Main Function
@@ -397,11 +510,12 @@ function Check-InsecureServicesExecutable{
 
 function main {
     # Start functions
+    #Check-KernelInfo
     #Check-InsecureServices
     #Check-UnquotedPathServices
     #Check-WeakRegistryPermissions
     #Check-InsecureServicesExecutable
-    Check-KernelInfo
+    Check-TaskScheduled
 
 }
 
