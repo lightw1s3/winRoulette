@@ -399,8 +399,11 @@ function Check-TaskScheduled{
 
     #Return variable
     $resultPerm = $false
+    $resultPath = $false
     #Auxiliary variables
     $vulnservPerm=@{}
+    $vulnservUnquoted=@{}
+    $accesschk = Get-PathAccessChk
 
     $OrigError = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
@@ -426,18 +429,17 @@ function Check-TaskScheduled{
                 $match = Select-String ">(.*)<" -inputobject $command
                 $command = $match.matches.groups[0].value
                 $command = $command.Replace(">", "")
-                $pathTaskCommand = $command.Replace("<", "")
+                $command = $command.Replace("<", "")
 
                 #######
                 #1. check insecure permissions
                 #######
                 #Check permissions of the executable
-                $pathTaskCommand = $pathTaskCommand.Replace("'", "")
+                $pathTaskCommand = $command.Replace("'", "")
                 $pathTaskCommand = $pathTaskCommand.Replace('"', '')
                 $pathTaskCommand = $pathTaskCommand.Substring(0, $pathTaskCommand.ToLower().IndexOf('.exe') + 4)
 
                 #Execute Acceschk
-                $accesschk = Get-PathAccessChk
                 $pathexecutable=$pathTaskCommand
                 $commandAccess = "$accesschk /accepteula -quvw `"$pathexecutable`""
                 $raccchk = Invoke-Expression -Command $commandAccess
@@ -469,6 +471,56 @@ function Check-TaskScheduled{
                 #######
                 #2. check unquoted path
                 #######
+                $splitpathblank = $command.Substring(0, $command.ToLower().IndexOf('.exe') + 4).Split(' ')
+                $splitpathslash = $command.Substring(0, $command.ToLower().IndexOf('.exe') + 4).Split('\')
+
+                # Check write permissions
+                # C:\PrivEsc\accesschk.exe /accepteula -uwdq $env:UserName "C:\Program Files\Unquoted Path Service\"
+
+                $concatpatharray = @()
+
+                if ($splitpathblank.Length -gt 2) {
+                    $servresult += ( "Path: " + $command)
+                    
+                    for ($i=0;$i -lt $splitpathslash.Length; $i++) {
+                        $concatpatharray += $splitpathslash[0..$i] -join '\'
+                    }
+                    # Delete last element (.exe file)
+                    $newconcatpatharray = $concatpatharray[0..($concatpatharray.Length-2)]
+                    
+                    # Check write permissions in path
+                    # execute acceschk
+                    foreach($ipath in $newconcatpatharray){
+                        $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
+                        $raccchk = Invoke-Expression -Command $commandAccess
+                        $patternPermissions = "(SERVICE_ALL_ACCESS|SERVICE_CHANGE_CONFIG)"
+                        if ("$raccchk" -match $patternPermissions){
+                            #check groups in service
+                            #Check user in service
+                            $userLocalGroups = Get-LocalGroupUser
+                            $check=$False
+                            foreach($group in $userLocalGroups){
+                                $group = $group.Replace("\", "\\")
+                                if ("$raccchk" -match "$group"){
+                                        $check=$True
+                                        break  
+                                }
+                            }
+           
+                            #Check user in service
+                            if ($check -eq $False){
+                                if ("$raccchk" -match "$env:Username"){
+                                    $vulnservUnquoted.add("$taskname","$ipath")
+                                    $raccchk | Out-File -FilePath "$scriptPath\results\AccChk_TaskUnquotedPath.txt" -Append
+                                }
+                            } else {
+                                $vulnservUnquoted.add("$taskname","$ipath")
+                            }
+                        }
+                         
+                    }
+                }
+
                                 
             } else {
                 Write-Verbose "Task '$($task.name)' is disabled"
@@ -482,6 +534,11 @@ function Check-TaskScheduled{
     if ($vulnservPerm.Count -ne 0){
       $resultPerm = $true  
     }
+
+    if ($vulnservUnquoted.Count -ne 0){
+      $resultPath = $true  
+    }
+
 
     # Write method
     if ($resultPerm -eq $true){
@@ -497,7 +554,17 @@ function Check-TaskScheduled{
         write-host "   4. Wait task"
 
     } elseif ($resultPath -eq $true)  {
-
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "  [-] unquoted path for task"
+        $vulnservUnquoted.keys | foreach-object{
+            $message = 'Taskname-ExecutablePath: {0} - {1}' -f $_, $vulnservUnquoted[$_]
+            Write-Output $message
+        }
+        write-host "   1. Obtain the service with the path (careful with env variables): Get-WmiObject win32_service | Select Name, PathName | Where-Object {`$_.pathname -eq `"[ExecutablePath]`"} "
+        write-host "   2. Check if the service execute with LocalSystem Privs: sc.exe qc [servicename]"
+        write-host "   3. Check write permissions in the split path folders services. Search RW in file AccChk_TaskUnquotedPath.txt"
+        write-host "   4. Place the payload in the indicated path. Rename it with the letters up to the next found space."
+        write-host "   5. Wait task"
     }else {
        write-host "  - Not possible escalation of privileges" -ForegroundColor red 
     }
