@@ -809,6 +809,7 @@ function Check-PasswordsFilesDir{
 
     #Name file or directory
     $directories = Get-ChildItem -Path C:\ -Recurse | where-object {$_.FullName}
+    $directories = Get-ChildItem -Recurse | where-object {$_.FullName}
     $arrdir=@()
     foreach($dir in $directories){
         $pattern = "(.*pass.*|.*cred.*)"
@@ -819,6 +820,7 @@ function Check-PasswordsFilesDir{
     #Content
     $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
     $filescpass = Get-ChildItem -recurse -Path C:\ -include *.txt,*.config,*.ini,*.config | Select-String -pattern $pattcred
+    $filescpass = Get-ChildItem -recurse -include *.txt,*.config,*.ini,*.config | Select-String -pattern $pattcred
 
     $resmatchpass = Compare-Object -ReferenceObject $arrdir -DifferenceObject $filescpass -IncludeEqual
     $resmatchpass | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
@@ -832,17 +834,16 @@ function Check-PasswordsFilesDir{
     if ($result -eq $true){
         write-host "      + Possible credentials matches found" -ForegroundColor green
         write-host "      1. Check PossiblePasswords.txt section: Files and Directories"
+    } else {
+        write-host "      |- Nothing found"
     }
 
 }
-
-
 
 function Check-RegistryPass{
     [CmdletBinding()]
 	param()
     
-    write-host "`n"
     write-host "   [-] Check common credentials stored in registry"
     echo "Section:Common credentials in registry" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
@@ -895,6 +896,8 @@ function Check-RegistryPass{
     if ($result -eq $true){
         write-host "      + Possible credentials in registry found" -ForegroundColor green
         write-host "      1. Check PossiblePasswords.txt section: Common credentials in registry"
+    } else {
+        write-host "      |- Nothing found"
     }
 
 }
@@ -903,7 +906,6 @@ function Check-RunAsCommand {
     [CmdletBinding()]
 	param()
     
-    write-host "`n"
     write-host "   [-] Check caché credentials saved"
     echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
@@ -919,9 +921,52 @@ function Check-RunAsCommand {
     if ($result -eq $true){
         write-host "      + Possible credentials matches found" -ForegroundColor green
         write-host "      1. Check PossiblePasswords.txt section: Credentials Manager"
+    } else {
+        write-host "      |- Nothing found"
     }
 }
 
+function Check-PasswordsBackupHives{
+    [CmdletBinding()]
+	param()
+    
+
+    #Return variable
+    $result = $false
+    write-host "   [-] Check caché credentials saved"
+    $commonDirs = @("C:\Windows\repair\SAM",
+                    "C:\Windows\System32\config\RegBack\SAM",
+                    "C:\Windows\System32\config\SAM",
+                    "C:\Windows\repair\SYSTEM",
+                    "C:\Windows\System32\config\SYSTEM",
+                    "C:\Windows\System32\config\RegBack\SYSTEM"
+                    )
+
+    $acopi=@()
+    foreach($dir in $commonDirs){
+        try{
+            $check = Test-Path $dir -PathType Leaf -ErrorAction Ignore
+        }catch{
+            $check = $false
+        }
+        if ($check){
+            $acopi += $dir
+        }
+    }
+
+    if (-not ([string]::IsNullOrEmpty($acopi))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Copied this files to work machine. It is necessary SYSTEM + SAM"
+        write-host $acopi
+    } else {
+        write-host "      |- Nothing found"
+    }
+}
 
 function Check-PasswordsPrivs{
     [CmdletBinding()]
@@ -936,8 +981,9 @@ function Check-PasswordsPrivs{
     Check-RegistryPass
     #Credential-Manager
     Check-RunAsCommand
+    #Backup hives
+    Check-PasswordsBackupHives
 }
-
 
 #############################
 # Main Function
