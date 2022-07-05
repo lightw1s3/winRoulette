@@ -836,6 +836,69 @@ function Check-PasswordsFilesDir{
 
 }
 
+
+
+function Check-RegistryPass{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "   [-] Check common credentials stored in registry"
+    echo "Section:Common credentials in registry" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    #Return variable
+    $result = $false
+
+    #Auxiliary variables
+    $OrigError = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+
+    # Only search in HKLM
+    $keyCommonPass = @("HKEY_LOCAL_MACHINE\SOFTWARE\TigerVNC\WinVNC4",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\TightVNC\Server",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\ORL\WinVNC3\Default",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\RealVNC\WinVNC4\",
+                        "HKEY_CURRENT_USER\SOFTWARE\TightVNC",
+                        "HKEY_CURRENT_USER\SOFTWARE\TurboVNC",
+                        "HKEY_CURRENT_USER\SOFTWARE\ORL\WinVNC3\Password",
+                        "HKEY_USERS\.DEFAULT\Software\ORL\WinVNC3\Password",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon",
+                        "HKEY_LOCAL_MACHINE\SYSTEM\Current\ControlSet\Services\SNMP",
+                        "HKEY_CURRENT_USER\SOFTWARE\OpenSSH\Agent\Key",
+                        "HKEY_CURRENT_USER\SOFTWARE\\SimonTatham\PuTTY\Sessions"
+                    )
+
+    #Obtain executables for each value
+    foreach($ikey in $keyCommonPass){
+        $registryCommand= "Registry::" + $ikey
+        #To manage the registry that not exits
+        try {
+            $namesubkeys = Get-Item -Path $registryCommand
+        }catch{
+            break
+        }
+        echo $ikey | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+        foreach($v in $namesubkeys.GetValueNames()){
+            $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
+            if ($v -match $pattcred){
+                $regvalue = $namesubkeys.GetValue($v)
+                $line = $v + ":" + $regvalue
+                echo $line | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+                $result = $true
+            }
+        }
+    }
+
+    $ErrorActionPreference = $OrigError
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials in registry found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Common credentials in registry"
+    }
+
+}
+
 function Check-PasswordsPrivs{
     [CmdletBinding()]
 	param()
@@ -845,7 +908,10 @@ function Check-PasswordsPrivs{
 
     # Files
     #Check-PasswordsFilesDir
+    #Registry
+    Check-RegistryPass
 }
+
 
 #############################
 # Main Function
