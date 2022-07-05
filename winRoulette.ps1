@@ -899,6 +899,30 @@ function Check-RegistryPass{
 
 }
 
+function Check-RunAsCommand {
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "   [-] Check caché credentials saved"
+    echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    $creds = cmdkey /list
+    echo $creds | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($creds))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Credentials Manager"
+    }
+}
+
+
 function Check-PasswordsPrivs{
     [CmdletBinding()]
 	param()
@@ -910,6 +934,8 @@ function Check-PasswordsPrivs{
     #Check-PasswordsFilesDir
     #Registry
     Check-RegistryPass
+    #Credential-Manager
+    Check-RunAsCommand
 }
 
 
