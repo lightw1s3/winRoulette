@@ -793,6 +793,60 @@ function Check-StartUpApps{
 
 }
 
+function Check-PasswordsFilesDir{
+    [CmdletBinding()]
+	param()
+    
+
+    #Return variable
+    $result = $false
+
+    #############
+    # Search files
+    ###############
+    write-host "  [-] Check files and directories"
+    echo "Section:Files and Directories" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    #Name file or directory
+    $directories = Get-ChildItem -Path C:\ -Recurse | where-object {$_.FullName}
+    $arrdir=@()
+    foreach($dir in $directories){
+        $pattern = "(.*pass.*|.*cred.*)"
+        if ($dir.fullname -match $pattern){
+            $arrdir += $dir.fullname
+        }
+    }
+    #Content
+    $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
+    $filescpass = Get-ChildItem -recurse -Path C:\ -include *.txt,*.config,*.ini,*.config | Select-String -pattern $pattcred
+
+    $resmatchpass = Compare-Object -ReferenceObject $arrdir -DifferenceObject $filescpass -IncludeEqual
+    $resmatchpass | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($resmatchpass))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Files and Directories"
+    }
+
+}
+
+function Check-PasswordsPrivs{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check presents password in the computer"
+
+    # Files
+    #Check-PasswordsFilesDir
+}
+
 #############################
 # Main Function
 #############################
@@ -808,7 +862,8 @@ function main {
     #Check-Autoruns
     #Check-AlwaysInstallElevated
     #Check-InsecureGUIApps
-    Check-StartUpApps
+    #Check-StartUpApps
+    Check-PasswordsPrivs
 
 }
 
