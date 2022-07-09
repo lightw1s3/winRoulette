@@ -364,10 +364,9 @@ function Check-UnquotedPathServices {
                 write-host "  Possible vulnerable name services run with LocalSystem:" 
                 write-host $servresult
                 write-host "  Next Steps:"
-                write-host "   1. Search SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions: sc.exe qc [service_name] "
-                write-host "   2. Check if it is launched with Start_Type: 3"
-                write-host "   3. The folders listed under accesscheckUnquotedPath.txt have write permissions for the user"
-                write-host "   4. Place the payload in the indicated path. Rename it with the letters up to the next found space."
+                write-host "   1. Check if it is launched with Start_Type: 3"
+                write-host "   2. The folders listed under accesscheckUnquotedPath.txt have write permissions for the user"
+                write-host "   3. Place the payload in the indicated path. Rename it with the letters up to the next found space."
             } else {
                write-host "  - Not possible escalation of privileges" -ForegroundColor red 
             }
@@ -756,7 +755,7 @@ function Check-InsecureGUIApps{
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
-        write-host "   Applications running under other users' or SYSTEM privileges: Check InsecureGUIApps.txt"
+        write-host "   Applications running under other users' or SYSTEM privileges: CheckInsecureGUIApps.txt"
         write-host "   1. Check if any user is in Admin group: net user [user]"
         write-host "   2. Execute the program with privs and open file: file://c:/windows/system32/cmd.exe push ENTER"
     } else {
@@ -808,8 +807,7 @@ function Check-PasswordsFilesDir{
     echo "Section:Files and Directories" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
     #Name file or directory
-    $directories = Get-ChildItem -Path C:\ -Recurse | where-object {$_.FullName}
-    $directories = Get-ChildItem -Recurse | where-object {$_.FullName}
+    $directories = Get-ChildItem -Recurse -Path C:\ | where-object {$_.FullName}
     $arrdir=@()
     foreach($dir in $directories){
         $pattern = "(.*pass.*|.*cred.*)"
@@ -819,8 +817,7 @@ function Check-PasswordsFilesDir{
     }
     #Content
     $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
-    $filescpass = Get-ChildItem -recurse -Path C:\ -include *.txt,*.config,*.ini,*.config | Select-String -pattern $pattcred
-    $filescpass = Get-ChildItem -recurse -include *.txt,*.config,*.ini,*.config | Select-String -pattern $pattcred
+    $filescpass = Get-ChildItem -recurse -include *.txt,*.config,*.ini,*.xml -Path C:\ | Select-String -pattern $pattcred
 
     $resmatchpass = Compare-Object -ReferenceObject $arrdir -DifferenceObject $filescpass -IncludeEqual
     $resmatchpass | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
