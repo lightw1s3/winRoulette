@@ -364,10 +364,9 @@ function Check-UnquotedPathServices {
                 write-host "  Possible vulnerable name services run with LocalSystem:" 
                 write-host $servresult
                 write-host "  Next Steps:"
-                write-host "   1. Search SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions: sc.exe qc [service_name] "
-                write-host "   2. Check if it is launched with Start_Type: 3"
-                write-host "   3. The folders listed under accesscheckUnquotedPath.txt have write permissions for the user"
-                write-host "   4. Place the payload in the indicated path. Rename it with the letters up to the next found space."
+                write-host "   1. Check if it is launched with Start_Type: 3"
+                write-host "   2. The folders listed under accesscheckUnquotedPath.txt have write permissions for the user"
+                write-host "   3. Place the payload in the indicated path. Rename it with the letters up to the next found space."
             } else {
                write-host "  - Not possible escalation of privileges" -ForegroundColor red 
             }
@@ -756,7 +755,7 @@ function Check-InsecureGUIApps{
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
-        write-host "   Applications running under other users' or SYSTEM privileges: Check InsecureGUIApps.txt"
+        write-host "   Applications running under other users' or SYSTEM privileges: CheckInsecureGUIApps.txt"
         write-host "   1. Check if any user is in Admin group: net user [user]"
         write-host "   2. Execute the program with privs and open file: file://c:/windows/system32/cmd.exe push ENTER"
     } else {
@@ -793,6 +792,196 @@ function Check-StartUpApps{
 
 }
 
+function Check-PasswordsFilesDir{
+    [CmdletBinding()]
+	param()
+    
+
+    #Return variable
+    $result = $false
+
+    #############
+    # Search files
+    ###############
+    write-host "  [-] Check files and directories"
+    echo "Section:Files and Directories" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    #Name file or directory
+    $directories = Get-ChildItem -Recurse -Path C:\ | where-object {$_.FullName}
+    $arrdir=@()
+    foreach($dir in $directories){
+        $pattern = "(.*pass.*|.*cred.*)"
+        if ($dir.fullname -match $pattern){
+            $arrdir += $dir.fullname
+        }
+    }
+    #Content
+    $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
+    $filescpass = Get-ChildItem -recurse -include *.txt,*.config,*.ini,*.xml -Path C:\ | Select-String -pattern $pattcred
+
+    $resmatchpass = Compare-Object -ReferenceObject $arrdir -DifferenceObject $filescpass -IncludeEqual
+    $resmatchpass | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($resmatchpass))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Files and Directories"
+    } else {
+        write-host "      |- Nothing found"
+    }
+
+}
+
+function Check-RegistryPass{
+    [CmdletBinding()]
+	param()
+    
+    write-host "   [-] Check common credentials stored in registry"
+    echo "Section:Common credentials in registry" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    #Return variable
+    $result = $false
+
+    #Auxiliary variables
+    $OrigError = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+
+    # Only search in HKLM
+    $keyCommonPass = @("HKEY_LOCAL_MACHINE\SOFTWARE\TigerVNC\WinVNC4",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\TightVNC\Server",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\ORL\WinVNC3\Default",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\RealVNC\WinVNC4\",
+                        "HKEY_CURRENT_USER\SOFTWARE\TightVNC",
+                        "HKEY_CURRENT_USER\SOFTWARE\TurboVNC",
+                        "HKEY_CURRENT_USER\SOFTWARE\ORL\WinVNC3\Password",
+                        "HKEY_USERS\.DEFAULT\Software\ORL\WinVNC3\Password",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon",
+                        "HKEY_LOCAL_MACHINE\SYSTEM\Current\ControlSet\Services\SNMP",
+                        "HKEY_CURRENT_USER\SOFTWARE\OpenSSH\Agent\Key",
+                        "HKEY_CURRENT_USER\SOFTWARE\\SimonTatham\PuTTY\Sessions"
+                    )
+
+    #Obtain executables for each value
+    foreach($ikey in $keyCommonPass){
+        $registryCommand= "Registry::" + $ikey
+        #To manage the registry that not exits
+        try {
+            $namesubkeys = Get-Item -Path $registryCommand
+        }catch{
+            break
+        }
+        echo $ikey | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+        foreach($v in $namesubkeys.GetValueNames()){
+            $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
+            if ($v -match $pattcred){
+                $regvalue = $namesubkeys.GetValue($v)
+                $line = $v + ":" + $regvalue
+                echo $line | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+                $result = $true
+            }
+        }
+    }
+
+    $ErrorActionPreference = $OrigError
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials in registry found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Common credentials in registry"
+    } else {
+        write-host "      |- Nothing found"
+    }
+
+}
+
+function Check-RunAsCommand {
+    [CmdletBinding()]
+	param()
+    
+    write-host "   [-] Check caché credentials saved"
+    echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    $creds = cmdkey /list
+    echo $creds | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($creds))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Credentials Manager"
+    } else {
+        write-host "      |- Nothing found"
+    }
+}
+
+function Check-PasswordsBackupHives{
+    [CmdletBinding()]
+	param()
+    
+
+    #Return variable
+    $result = $false
+    write-host "   [-] Check caché credentials saved"
+    $commonDirs = @("C:\Windows\repair\SAM",
+                    "C:\Windows\System32\config\RegBack\SAM",
+                    "C:\Windows\System32\config\SAM",
+                    "C:\Windows\repair\SYSTEM",
+                    "C:\Windows\System32\config\SYSTEM",
+                    "C:\Windows\System32\config\RegBack\SYSTEM"
+                    )
+
+    $acopi=@()
+    foreach($dir in $commonDirs){
+        try{
+            $check = Test-Path $dir -PathType Leaf -ErrorAction Ignore
+        }catch{
+            $check = $false
+        }
+        if ($check){
+            $acopi += $dir
+        }
+    }
+
+    if (-not ([string]::IsNullOrEmpty($acopi))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Copied this files to work machine. It is necessary SYSTEM + SAM"
+        write-host $acopi
+    } else {
+        write-host "      |- Nothing found"
+    }
+}
+
+function Check-PasswordsPrivs{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check presents password in the computer"
+
+    # Files
+    #Check-PasswordsFilesDir
+    #Registry
+    Check-RegistryPass
+    #Credential-Manager
+    Check-RunAsCommand
+    #Backup hives
+    Check-PasswordsBackupHives
+}
+
 #############################
 # Main Function
 #############################
@@ -808,7 +997,8 @@ function main {
     #Check-Autoruns
     #Check-AlwaysInstallElevated
     #Check-InsecureGUIApps
-    Check-StartUpApps
+    #Check-StartUpApps
+    Check-PasswordsPrivs
 
 }
 
