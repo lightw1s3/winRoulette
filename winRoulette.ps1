@@ -34,7 +34,7 @@ It depends on the language of the operative system
     
     $groups=@("Everyone", "NT AUTHORITY\Authenticated users", "BUILTIN\Users", "NT AUTHORITY\Interactive")
 
-    $language = Get-WinSystemLocale | Select Name
+    $language = Get-Culture | Select Name
 
     if($language -match "es-*"){
         $groups += "NT AUTHORITY\Usuarios autentificados", "Todos", "BUILTIN\Usuarios"
@@ -401,7 +401,8 @@ function Check-WeakRegistryPermissions{
     $vulServ = @()
     if (-not ([string]::IsNullOrEmpty($posvulnServices))){
         
-        foreach ($line in $posvulnServices.Split("`n")) {
+        #foreach ($line in $posvulnServices.Split("`n")) {
+        foreach ($line in $posvulnServices) {
             $arrayVuln = $line.Split("\")
             #Last element is the service
             $serv = $arrayVuln[$arrayVuln.Length - 1]
@@ -903,7 +904,7 @@ function Check-RunAsCommand {
     [CmdletBinding()]
 	param()
     
-    write-host "   [-] Check caché credentials saved"
+    write-host "   [-] Check cache credentials saved"
     echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
     $creds = cmdkey /list
@@ -930,7 +931,7 @@ function Check-PasswordsBackupHives{
 
     #Return variable
     $result = $false
-    write-host "   [-] Check caché credentials saved"
+    write-host "   [-] Check cache credentials saved"
     $commonDirs = @("C:\Windows\repair\SAM",
                     "C:\Windows\System32\config\RegBack\SAM",
                     "C:\Windows\System32\config\SAM",
@@ -1016,18 +1017,18 @@ function Check-Impersonate {
 
 function main {
     # Start functions
-    Check-KernelInfo
-    Check-InsecureServices
-    Check-UnquotedPathServices
+    #Check-KernelInfo
+    #Check-InsecureServices
+    #Check-UnquotedPathServices
     Check-WeakRegistryPermissions
-    Check-InsecureServicesExecutabletoor
-    Check-TaskScheduled
-    Check-Autoruns
-    Check-AlwaysInstallElevated
-    Check-InsecureGUIApps
-    Check-StartUpApps
-    Check-PasswordsPrivs
-    Check-Impersonate
+    #Check-InsecureServicesExecutable
+    #Check-TaskScheduled
+    #Check-Autoruns
+    #Check-AlwaysInstallElevated
+    #Check-InsecureGUIApps
+    #Check-StartUpApps
+    #Check-PasswordsPrivs
+    #Check-Impersonate
 
 }
 
