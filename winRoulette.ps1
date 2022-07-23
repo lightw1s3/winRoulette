@@ -905,10 +905,7 @@ function Check-RunAsCommand {
 	param()
     
 
-    write-host "   [-] Check 
-    
-    
-    credentials saved"
+    write-host "   [-] Check credentials saved"
     echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
     $creds = cmdkey /list
