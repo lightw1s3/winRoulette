@@ -903,7 +903,7 @@ function Check-RunAsCommand {
     [CmdletBinding()]
 	param()
     
-    write-host "   [-] Check caché credentials saved"
+    write-host "   [-] Check cachÃ© credentials saved"
     echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
     $creds = cmdkey /list
@@ -930,7 +930,7 @@ function Check-PasswordsBackupHives{
 
     #Return variable
     $result = $false
-    write-host "   [-] Check caché credentials saved"
+    write-host "   [-] Check cachÃ© credentials saved"
     $commonDirs = @("C:\Windows\repair\SAM",
                     "C:\Windows\System32\config\RegBack\SAM",
                     "C:\Windows\System32\config\SAM",
@@ -1016,17 +1016,17 @@ function Check-Impersonate {
 
 function main {
     # Start functions
-    #Check-KernelInfo
-    #Check-InsecureServices
-    #Check-UnquotedPathServices
-    #Check-WeakRegistryPermissions
-    #Check-InsecureServicesExecutable
-    #Check-TaskScheduled
-    #Check-Autoruns
-    #Check-AlwaysInstallElevated
-    #Check-InsecureGUIApps
-    #Check-StartUpApps
-    #Check-PasswordsPrivs
+    Check-KernelInfo
+    Check-InsecureServices
+    Check-UnquotedPathServices
+    Check-WeakRegistryPermissions
+    Check-InsecureServicesExecutabletoor
+    Check-TaskScheduled
+    Check-Autoruns
+    Check-AlwaysInstallElevated
+    Check-InsecureGUIApps
+    Check-StartUpApps
+    Check-PasswordsPrivs
     Check-Impersonate
 
 }
