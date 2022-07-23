@@ -969,6 +969,9 @@ function Check-PasswordsPrivs{
     [CmdletBinding()]
 	param()
     
+    #Return variable
+    $result = $false
+
     write-host "`n"
     write-host "[*] Check presents password in the computer"
 
@@ -980,6 +983,31 @@ function Check-PasswordsPrivs{
     Check-RunAsCommand
     #Backup hives
     Check-PasswordsBackupHives
+}
+
+function Check-Impersonate {
+    [CmdletBinding()]
+	param()
+    
+    write-host "   [-] Check impersonate roles"
+    
+    $patternPermissions = "(SeImpersonatePrivilege|SeAssignPrimaryToken)"
+    $command = whoami /all
+    if ($command -match $patternPermissions){   
+        $result=$true
+    }
+
+    # Write method
+    if ($result -eq $true){
+        write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Impersonate priviledges found"
+        write-host $command
+        write-host "   1. Check so machine. "
+        write-host "   2. If the machine is >= Windows 10 1809 & Windows Server 2019. Otherwise, try Juicy Potato."
+        write-host "   3. If not work try PrintSpooler"
+    } else {
+       write-host "  - Not possible escalation of privileges" -ForegroundColor red 
+    }
 }
 
 #############################
@@ -998,7 +1026,8 @@ function main {
     #Check-AlwaysInstallElevated
     #Check-InsecureGUIApps
     #Check-StartUpApps
-    Check-PasswordsPrivs
+    #Check-PasswordsPrivs
+    Check-Impersonate
 
 }
 
