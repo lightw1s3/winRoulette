@@ -904,7 +904,11 @@ function Check-RunAsCommand {
     [CmdletBinding()]
 	param()
     
-    write-host "   [-] Check cache credentials saved"
+
+    write-host "   [-] Check 
+    
+    
+    credentials saved"
     echo "Section:Cache Credentials Manager" | Out-File -FilePath "$scriptPath\results\PossiblePasswords.txt" -Append
 
     $creds = cmdkey /list
@@ -931,6 +935,7 @@ function Check-PasswordsBackupHives{
 
     #Return variable
     $result = $false
+
     write-host "   [-] Check cache credentials saved"
     $commonDirs = @("C:\Windows\repair\SAM",
                     "C:\Windows\System32\config\RegBack\SAM",
