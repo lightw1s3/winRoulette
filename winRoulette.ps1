@@ -1019,18 +1019,18 @@ function Check-Impersonate {
 
 function main {
     # Start functions
-    #Check-KernelInfo
-    #Check-InsecureServices
-    #Check-UnquotedPathServices
+    Check-KernelInfo
+    Check-InsecureServices
+    Check-UnquotedPathServices
     Check-WeakRegistryPermissions
-    #Check-InsecureServicesExecutable
-    #Check-TaskScheduled
-    #Check-Autoruns
-    #Check-AlwaysInstallElevated
-    #Check-InsecureGUIApps
-    #Check-StartUpApps
-    #Check-PasswordsPrivs
-    #Check-Impersonate
+    Check-InsecureServicesExecutable
+    Check-TaskScheduled
+    Check-Autoruns
+    Check-AlwaysInstallElevated
+    Check-InsecureGUIApps
+    Check-StartUpApps
+    Check-PasswordsPrivs
+    Check-Impersonate
 
 }
 
