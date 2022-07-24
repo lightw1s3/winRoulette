@@ -1003,11 +1003,11 @@ function Check-Impersonate {
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
-        write-host "   Impersonate priviledges found"
-        write-host $command
+        write-host "   Impersonate priviledges found: SeImpersonatePrivilege oe SeAssignPrimaryToken"
         write-host "   1. Check so machine. "
-        write-host "   2. If the machine is >= Windows 10 1809 & Windows Server 2019. Otherwise, try Juicy Potato."
-        write-host "   3. If not work try PrintSpooler"
+        write-host "   2. Check whoami /all if the permission is enable "
+        write-host "   3. If the machine is >= Windows 10 1809 & Windows Server 2019. Otherwise, try Juicy Potato."
+        write-host "   4. If not work try PrintSpooler"
     } else {
        write-host "  - Not possible escalation of privileges" -ForegroundColor red 
     }
